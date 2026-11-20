@@ -1,0 +1,12 @@
+secrets.yaml
+*.secrets.yaml
+.esphome/
+build/
+*.bin
+*.elf
+*.map
+*.log
+*.bak
+*before*.yaml
+
+
