@@ -1,0 +1,218 @@
+# ====================================================
+# AIWA SENDSPIN
+# Freenove ESP32-S3-WROOM-1 + PCM5102A
+# ESPHome 2026.11
+# Home Assistant / Music Assistant
+# ====================================================
+
+substitutions:
+  device_name: aiwa-sendspin
+  friendly_name: "AIWA Sendspin"
+
+# ----------------------------------------------------
+# ESPHome
+# ----------------------------------------------------
+esphome:
+  name: ${device_name}
+  friendly_name: ${friendly_name}
+  comment: "WiFi Stereo Audio - PCM5102A"
+
+  on_boot:
+    priority: -100
+    then:
+      - logger.log:
+          level: INFO
+          tag: aiwa_boot
+          format: "AIWA Sendspin boot completed"
+
+# ----------------------------------------------------
+# ESP32-S3
+# ----------------------------------------------------
+esp32:
+  board: esp32-s3-devkitc-1
+  framework:
+    type: esp-idf
+    advanced:
+      flash_chip: gd
+
+# ----------------------------------------------------
+# Logging
+# ----------------------------------------------------
+logger:
+  level: DEBUG
+  baud_rate: 115200
+  hardware_uart: USB_SERIAL_JTAG
+
+  boot_log_buffer_size: 8kB
+  boot_log_level: DEBUG
+
+  logs:
+    wifi: INFO
+    api: INFO
+    i2s_audio: DEBUG
+    i2s_audio.speaker: DEBUG
+    speaker: DEBUG
+    media_player: DEBUG
+
+# ----------------------------------------------------
+# Home Assistant API
+# ----------------------------------------------------
+api:
+  on_client_connected:
+    - delay: 2s
+    - logger.replay_boot_logs:
+
+# ----------------------------------------------------
+# OTA
+# ----------------------------------------------------
+ota:
+  - platform: esphome
+
+# ----------------------------------------------------
+# WiFi
+# ----------------------------------------------------
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  power_save_mode: none
+
+  ap:
+    ssid: "${friendly_name} Fallback"
+
+captive_portal:
+
+# ----------------------------------------------------
+# Sensors
+# ----------------------------------------------------
+sensor:
+  - platform: wifi_signal
+    name: "WiFi Signal"
+    update_interval: 60s
+
+  - platform: uptime
+    name: "Uptime"
+    update_interval: 60s
+
+text_sensor:
+  - platform: wifi_info
+    ip_address:
+      name: "WiFi IP"
+      id: wifi_ip
+      icon: mdi:ip-network
+    ssid:
+      name: "Connected SSID"
+
+binary_sensor:
+  - platform: status
+    name: "Online"
+
+# ----------------------------------------------------
+# I2S Bus
+#
+# ESP32-S3       PCM5102MK2.0
+# GPIO4     -->  LRCK
+# GPIO5     -->  BCK
+# GPIO6     -->  DATA
+# 5V        -->  VCC
+# GND       -->  GND
+#
+# FLT: nepovezan; J1 ostane v položaju I2S
+# ----------------------------------------------------
+i2s_audio:
+  - id: i2s_bus
+    i2s_lrclk_pin: GPIO4
+    i2s_bclk_pin: GPIO5
+
+# ----------------------------------------------------
+# Audio output and mixer
+# ----------------------------------------------------
+speaker:
+  # Physical PCM5102A DAC
+  - platform: i2s_audio
+    id: pcm5102a_speaker
+    i2s_audio_id: i2s_bus
+    dac_type: external
+    i2s_dout_pin: GPIO6
+
+    channel: stereo
+    sample_rate: 48000
+    bits_per_sample: 16bit
+    buffer_duration: 100ms
+
+  # Two logical input speakers
+  - platform: mixer
+    id: audio_mixer
+    output_speaker: pcm5102a_speaker
+    num_channels: 2
+    bits_per_sample: 16
+
+    source_speakers:
+      - id: music_input
+        buffer_duration: 100ms
+
+      - id: announcement_input
+        buffer_duration: 100ms
+
+# ----------------------------------------------------
+# Media Player
+# ----------------------------------------------------
+
+media_player:
+  - platform: speaker
+    id: aiwa_player
+    name: "AIWA Sendspin"
+
+    buffer_size: 32768
+
+    volume_initial: 40%
+    volume_min: 0%
+    volume_max: 100%
+    volume_increment: 5%
+
+    media_pipeline:
+      speaker: music_input
+      format: FLAC
+      sample_rate: 48000
+      num_channels: 2
+
+    announcement_pipeline:
+      speaker: announcement_input
+      format: WAV
+      sample_rate: 16000
+      num_channels: 2
+
+    on_play:
+      - logger.log:
+          level: INFO
+          tag: aiwa_audio
+          format: "PLAY started"
+
+    on_pause:
+      - logger.log:
+          level: INFO
+          tag: aiwa_audio
+          format: "PAUSE received"
+
+    on_idle:
+      - logger.log:
+          level: INFO
+          tag: aiwa_audio
+          format: "Player IDLE"
+
+    on_announcement:
+      - logger.log:
+          level: INFO
+          tag: aiwa_audio
+          format: "ANNOUNCEMENT started"
+
+# ----------------------------------------------------
+# Maintenance
+# ----------------------------------------------------
+button:
+  - platform: restart
+    name: "Restart"
+
+  - platform: safe_mode
+    name: "Safe Mode"
+
